@@ -1,16 +1,27 @@
 package main
 
 import (
+	"context"
 	"log"
+	"os"
 
+	"github.com/PullRequestInc/go-gpt3"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
-	openai "github.com/openai/api-go"
 )
 
 func main() {
-	bot, err := tgbotapi.NewBotAPI("YOUR_TELEGRAM_BOT_TOKEN")
+
+	apiKey := os.Getenv("GP3_API_KEY")
+	if apiKey == "" {
+		log.Fatalln("Missing GP3_API_KEY")
+	}
+
+	client := gpt3.NewClient(apiKey)
+	ctx := context.Background()
+
+	bot, err := tgbotapi.NewBotAPI("TELEGRAM_BOT_TOKEN")
 	if err != nil {
-		log.Panic(err)
+		log.Fatalln("Missing TELEGRAM_BOT_TOKEN")
 	}
 
 	bot.Debug = true
@@ -30,12 +41,11 @@ func main() {
 		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 
 		// Use the OpenAI API to generate a response
-		client := openai.NewClient("YOUR_OPENAI_API_KEY")
-		response, err := client.Completion.Create(openai.CompletionRequest{
-			Engine:    "text-davinci-002",
-			Prompt:    update.Message.Text,
-			MaxTokens: 2048,
+		response, err := client.Completion(ctx, gpt3.CompletionRequest{
+			Prompt:    []string{update.Message.Text},
+			MaxTokens: gpt3.IntPtr(64),
 		})
+
 		if err != nil {
 			log.Println(err)
 			continue
