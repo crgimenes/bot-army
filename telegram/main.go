@@ -157,7 +157,7 @@ func main() {
 			continue
 		}
 
-		magacc = append(magacc, response)
+		magacc = append(magacc, logMsg, response)
 		saveContext(magacc)
 		sendToTelegram(update, response, bot)
 	}
