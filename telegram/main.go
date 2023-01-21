@@ -77,7 +77,7 @@ func main() {
 		logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", update.Message.From.UserName, update.Message.Text)
 		fmt.Printf("logMsg: %q\n", logMsg)
 
-		if len(magacc) > 100 {
+		for len(magacc) > 100 {
 			magacc = magacc[1:]
 		}
 		magacc = append(magacc, logMsg)
@@ -126,13 +126,14 @@ func main() {
 				prompt,
 			},
 			MaxTokens:   gpt3.IntPtr(2000),
-			Temperature: gpt3.Float32Ptr(0.9),
+			Temperature: gpt3.Float32Ptr(0.7),
 		}, func(resp *gpt3.CompletionResponse) {
 			response += resp.Choices[0].Text
 		})
 		if err != nil {
 			log.Println(err)
-			magacc = magacc[:len(magacc)-2]
+			// remove os dois primeiros itens do magacc
+			magacc = magacc[2:]
 			maxRetries--
 			if maxRetries == 0 {
 				magacc = []string{}
