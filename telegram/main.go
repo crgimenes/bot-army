@@ -93,8 +93,17 @@ func main() {
 		if err != nil {
 			log.Println(err)
 			magacc = []string{}
-			msg := os.Getenv("CLEAR_CONTEXT_MSG")
-			if msg != "" {
+			msgStr := os.Getenv("CLEAR_CONTEXT_MSG")
+			if msgStr != "" {
+				msg := tgbotapi.Chattable(&tgbotapi.MessageConfig{
+					BaseChat: tgbotapi.BaseChat{
+						ChatID:           update.Message.Chat.ID,
+						ReplyToMessageID: update.Message.MessageID,
+					},
+					Text:                  msgStr,
+					ParseMode:             "markdown",
+					DisableWebPagePreview: true,
+				})
 				bot.Send(msg)
 			}
 			continue
