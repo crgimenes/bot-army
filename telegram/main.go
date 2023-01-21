@@ -2,26 +2,34 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/PullRequestInc/go-gpt3"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 func main() {
+	magacc := []string{}
 
-	apiKey := os.Getenv("GP3_API_KEY")
+	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		log.Fatalln("Missing GP3_API_KEY")
+		log.Fatalln("Missing OPENAI_API_KEY")
+	}
+
+	telegramBotToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	if telegramBotToken == "" {
+		log.Fatalln("Missing TELEGRAM_BOT_TOKEN")
 	}
 
 	client := gpt3.NewClient(apiKey)
 	ctx := context.Background()
 
-	bot, err := tgbotapi.NewBotAPI("TELEGRAM_BOT_TOKEN")
+	bot, err := tgbotapi.NewBotAPI(telegramBotToken)
 	if err != nil {
-		log.Fatalln("Missing TELEGRAM_BOT_TOKEN")
+		log.Panic(err)
 	}
 
 	bot.Debug = true
@@ -31,28 +39,84 @@ func main() {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
-	updates, err := bot.GetUpdatesChan(u)
+	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
 		if update.Message == nil { // ignore any non-Message Updates
 			continue
 		}
 
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+		logMsg := fmt.Sprintf("\n---------------\nFrom: %q\nTo: %q\nMessage: %s\n", update.Message.From.UserName, update.Message.Chat.UserName, update.Message.Text)
+		fmt.Printf("logMsg: %q\n", logMsg)
 
-		// Use the OpenAI API to generate a response
-		response, err := client.Completion(ctx, gpt3.CompletionRequest{
-			Prompt:    []string{update.Message.Text},
-			MaxTokens: gpt3.IntPtr(64),
-		})
+		if len(magacc) > 100 {
+			magacc = magacc[1:]
+		}
+		magacc = append(magacc, logMsg)
 
+		//if update.Message.Chat.UserName != bot.Self.UserName &&
+		//	!strings.Contains(update.Message.Text, bot.Self.UserName) {
+		//	continue
+		//}
+
+		msgContext := ""
+		for _, v := range magacc {
+			msgContext += v
+		}
+
+		response := ""
+		preContext, err := os.ReadFile("pre_ctx.txt")
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 
-		// Send the response back to the user
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, response.Choices[0].Text)
+		posContext, err := os.ReadFile("pos_ctx.txt")
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		prompt := string(preContext) + msgContext + "\n---------------\n" + string(posContext) + logMsg
+
+		log.Println("Prompt: ", prompt)
+
+		err = client.CompletionStreamWithEngine(ctx, gpt3.TextDavinci003Engine, gpt3.CompletionRequest{
+			Prompt: []string{
+				prompt,
+			},
+			MaxTokens:   gpt3.IntPtr(2000),
+			Temperature: gpt3.Float32Ptr(1.1),
+		}, func(resp *gpt3.CompletionResponse) {
+			response += resp.Choices[0].Text
+		})
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		if strings.Contains(response, "++++") {
+			log.Printf("msg ignored: %s", response)
+			continue
+		}
+
+		if response == "" {
+			log.Println("empty response")
+			continue
+		}
+
+		magacc = append(magacc, response)
+
+		msg := tgbotapi.Chattable(&tgbotapi.MessageConfig{
+			BaseChat: tgbotapi.BaseChat{
+				ChatID:           update.Message.Chat.ID,
+				ReplyToMessageID: update.Message.MessageID,
+			},
+			Text:                  response,
+			ParseMode:             "markdown",
+			DisableWebPagePreview: true,
+		})
+
 		bot.Send(msg)
 	}
 }
