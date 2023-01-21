@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -11,8 +12,35 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+func sendToTelegram(update tgbotapi.Update, response string, bot *tgbotapi.BotAPI) {
+	msg := tgbotapi.Chattable(&tgbotapi.MessageConfig{
+		BaseChat: tgbotapi.BaseChat{
+			ChatID:           update.Message.Chat.ID,
+			ReplyToMessageID: update.Message.MessageID,
+		},
+		Text:                  response,
+		ParseMode:             "markdown",
+		DisableWebPagePreview: true,
+	})
+
+	bot.Send(msg)
+}
+
 func main() {
 	magacc := []string{}
+
+	b, err := os.ReadFile("ctx.json")
+	if err != nil {
+		if !os.IsNotExist(err) {
+			panic(err)
+		}
+	}
+	if len(b) > 0 {
+		err = json.Unmarshal(b, &magacc)
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
@@ -54,6 +82,16 @@ func main() {
 		}
 		magacc = append(magacc, logMsg)
 
+		b, err := json.Marshal(magacc)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		err = os.WriteFile("ctx.json", b, 0644)
+		if err != nil {
+			panic(err)
+		}
+
 		//if update.Message.Chat.UserName != bot.Self.UserName &&
 		//	!strings.Contains(update.Message.Text, bot.Self.UserName) {
 		//	continue
@@ -81,6 +119,8 @@ func main() {
 
 		log.Println("Prompt: ", prompt)
 
+		maxRetries := 3
+	retry:
 		err = client.CompletionStreamWithEngine(ctx, gpt3.TextDavinci003Engine, gpt3.CompletionRequest{
 			Prompt: []string{
 				prompt,
@@ -93,7 +133,12 @@ func main() {
 		if err != nil {
 			log.Println(err)
 			magacc = magacc[:len(magacc)-2]
-			continue
+			maxRetries--
+			if maxRetries == 0 {
+				magacc = []string{}
+				continue
+			}
+			goto retry // goto is not evil
 		}
 
 		if strings.Contains(response, "++++") {
@@ -108,16 +153,6 @@ func main() {
 
 		magacc = append(magacc, response)
 
-		msg := tgbotapi.Chattable(&tgbotapi.MessageConfig{
-			BaseChat: tgbotapi.BaseChat{
-				ChatID:           update.Message.Chat.ID,
-				ReplyToMessageID: update.Message.MessageID,
-			},
-			Text:                  response,
-			ParseMode:             "markdown",
-			DisableWebPagePreview: true,
-		})
-
-		bot.Send(msg)
+		sendToTelegram(update, response, bot)
 	}
 }
