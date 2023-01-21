@@ -92,6 +92,11 @@ func main() {
 		})
 		if err != nil {
 			log.Println(err)
+			magacc = []string{}
+			msg := os.Getenv("CLEAR_CONTEXT_MSG")
+			if msg != "" {
+				bot.Send(msg)
+			}
 			continue
 		}
 
