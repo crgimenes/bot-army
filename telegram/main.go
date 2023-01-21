@@ -46,7 +46,7 @@ func main() {
 			continue
 		}
 
-		logMsg := fmt.Sprintf("\n---------------\nFrom: %q\nTo: %q\nMessage: %s\n", update.Message.From.UserName, update.Message.Chat.UserName, update.Message.Text)
+		logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", update.Message.From.UserName, update.Message.Text)
 		fmt.Printf("logMsg: %q\n", logMsg)
 
 		if len(magacc) > 100 {
@@ -77,7 +77,7 @@ func main() {
 			continue
 		}
 
-		prompt := string(preContext) + msgContext + "\n---------------\n" + string(posContext) + logMsg
+		prompt := string(preContext) + msgContext + "\n---\n" + string(posContext) + logMsg
 
 		log.Println("Prompt: ", prompt)
 
