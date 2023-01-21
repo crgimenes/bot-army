@@ -86,26 +86,13 @@ func main() {
 				prompt,
 			},
 			MaxTokens:   gpt3.IntPtr(2000),
-			Temperature: gpt3.Float32Ptr(1.1),
+			Temperature: gpt3.Float32Ptr(0.9),
 		}, func(resp *gpt3.CompletionResponse) {
 			response += resp.Choices[0].Text
 		})
 		if err != nil {
 			log.Println(err)
-			magacc = []string{}
-			msgStr := os.Getenv("CLEAR_CONTEXT_MSG")
-			if msgStr != "" {
-				msg := tgbotapi.Chattable(&tgbotapi.MessageConfig{
-					BaseChat: tgbotapi.BaseChat{
-						ChatID:           update.Message.Chat.ID,
-						ReplyToMessageID: update.Message.MessageID,
-					},
-					Text:                  msgStr,
-					ParseMode:             "markdown",
-					DisableWebPagePreview: true,
-				})
-				bot.Send(msg)
-			}
+			magacc = magacc[:len(magacc)-2]
 			continue
 		}
 
