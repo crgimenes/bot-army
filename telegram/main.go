@@ -12,6 +12,36 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+func loadContext() []string {
+	magacc := []string{}
+
+	b, err := os.ReadFile("ctx.json")
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Fatalln(err)
+		}
+	}
+	if len(b) > 0 {
+		err = json.Unmarshal(b, &magacc)
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+	return magacc
+}
+
+func saveContext(magacc []string) {
+	b, err := json.Marshal(magacc)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	err = os.WriteFile("ctx.json", b, 0644)
+	if err != nil {
+		log.Fatalln(err)
+	}
+}
+
 func sendToTelegram(update tgbotapi.Update, response string, bot *tgbotapi.BotAPI) {
 	msg := tgbotapi.Chattable(&tgbotapi.MessageConfig{
 		BaseChat: tgbotapi.BaseChat{
@@ -27,20 +57,7 @@ func sendToTelegram(update tgbotapi.Update, response string, bot *tgbotapi.BotAP
 }
 
 func main() {
-	magacc := []string{}
-
-	b, err := os.ReadFile("ctx.json")
-	if err != nil {
-		if !os.IsNotExist(err) {
-			panic(err)
-		}
-	}
-	if len(b) > 0 {
-		err = json.Unmarshal(b, &magacc)
-		if err != nil {
-			panic(err)
-		}
-	}
+	magacc := loadContext()
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
@@ -79,17 +96,6 @@ func main() {
 
 		for len(magacc) > 100 {
 			magacc = magacc[1:]
-		}
-		magacc = append(magacc, logMsg)
-
-		b, err := json.Marshal(magacc)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		err = os.WriteFile("ctx.json", b, 0644)
-		if err != nil {
-			panic(err)
 		}
 
 		//if update.Message.Chat.UserName != bot.Self.UserName &&
@@ -132,7 +138,6 @@ func main() {
 		})
 		if err != nil {
 			log.Println(err)
-			// remove os dois primeiros itens do magacc
 			magacc = magacc[2:]
 			maxRetries--
 			if maxRetries == 0 {
@@ -153,7 +158,7 @@ func main() {
 		}
 
 		magacc = append(magacc, response)
-
+		saveContext(magacc)
 		sendToTelegram(update, response, bot)
 	}
 }
