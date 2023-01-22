@@ -134,7 +134,7 @@ func main() {
 		maxRetries := 3 // TODO: make this configurable
 		retries := maxRetries
 	retry:
-		response := ""
+		buf.Reset()
 		err = client.CompletionStreamWithEngine(ctx, gpt3.TextDavinci003Engine, gpt3.CompletionRequest{
 			Prompt: []string{
 				prompt,
@@ -152,15 +152,18 @@ func main() {
 			retries--
 			if retries <= 0 {
 				log.Printf("GPT-3 error: %s, max retries reached", err)
+				// clear
+				chatMsgs = []string{}
+				buf.Reset()
 				continue
 			}
 			goto retry // goto is not evil
 		}
 
-		response = buf.String()
+		response := buf.String()
 
 		if strings.Contains(response, "++++") {
-			log.Printf("msg ignored: %s", response)
+			log.Printf("log: %q msg ignored: %q\n", logMsg, response)
 			continue
 		}
 
