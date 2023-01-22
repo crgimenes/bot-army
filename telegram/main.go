@@ -10,6 +10,7 @@ import (
 
 	"github.com/PullRequestInc/go-gpt3"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/neurosnap/sentences"
 )
 
 var (
@@ -17,7 +18,8 @@ var (
 )
 
 func tokenCount(input string) int {
-	tokens := strings.Fields(input)
+	tok := sentences.NewWordTokenizer(sentences.NewPunctStrings())
+	tokens := tok.Tokenize(input, false)
 	return len(tokens)
 }
 
