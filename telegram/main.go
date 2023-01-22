@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	maxTokens = 40
+	maxTokens = 3000
 )
 
 func createPrompt(magacc []string, logMsg string) string {
@@ -119,8 +119,10 @@ func main() {
 
 		logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", update.Message.From.UserName, update.Message.Text)
 
-		if len(chatMsgs) > 100 {
-			chatMsgs = chatMsgs[len(chatMsgs)-100:]
+		fmt.Printf("Received message: %s\n", update.Message.Text)
+
+		if len(chatMsgs) > 5 {
+			chatMsgs = chatMsgs[len(chatMsgs)-5:]
 		}
 
 		//if update.Message.Chat.UserName != bot.Self.UserName &&
@@ -140,14 +142,14 @@ func main() {
 				prompt,
 			},
 			MaxTokens:   gpt3.IntPtr(maxTokens),
-			Temperature: gpt3.Float32Ptr(0.7), // TODO: make this configurable
+			Temperature: gpt3.Float32Ptr(0.5), // TODO: make this configurable
 		}, func(resp *gpt3.CompletionResponse) {
 			buf.WriteString(resp.Choices[0].Text)
 		})
 		if err != nil {
 			log.Printf("GPT-3 error: %s, retrying n: %d", err, maxRetries-retries+1)
-			if len(chatMsgs) > 3 {
-				chatMsgs = chatMsgs[:len(chatMsgs)-3]
+			if len(chatMsgs) > 1 {
+				chatMsgs = chatMsgs[:len(chatMsgs)-1]
 			}
 			retries--
 			if retries <= 0 {
@@ -171,6 +173,8 @@ func main() {
 			log.Println("empty response")
 			continue
 		}
+
+		log.Printf("msg: %s", response)
 
 		chatMsgs = append(chatMsgs, logMsg, response)
 		saveContext(chatMsgs)
