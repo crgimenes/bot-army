@@ -94,8 +94,8 @@ func main() {
 		logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", update.Message.From.UserName, update.Message.Text)
 		fmt.Printf("logMsg: %q\n", logMsg)
 
-		for len(magacc) > 100 {
-			magacc = magacc[1:]
+		if len(magacc) > 100 {
+			magacc = magacc[len(magacc)-100:]
 		}
 
 		//if update.Message.Chat.UserName != bot.Self.UserName &&
