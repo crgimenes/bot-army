@@ -139,6 +139,8 @@ func main() {
 		prompt := createPrompt(chatMsgs, logMsg)
 		ct := tokenCount(prompt)
 
+		log.Printf("maxTokens: %d, tokenCount: %d", maxTokens, ct)
+
 		for ct > maxTokens {
 			log.Println("token count too high, removing the oldest two messages")
 			if len(chatMsgs) < 1 {
