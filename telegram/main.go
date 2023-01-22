@@ -118,7 +118,6 @@ func main() {
 		}
 
 		logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", update.Message.From.UserName, update.Message.Text)
-		fmt.Printf("logMsg: %q\n", logMsg)
 
 		if len(chatMsgs) > 100 {
 			chatMsgs = chatMsgs[len(chatMsgs)-100:]
@@ -128,8 +127,6 @@ func main() {
 		//	!strings.Contains(update.Message.Text, bot.Self.UserName) {
 		//	continue
 		//}
-
-		// cria um buffer para concatenar strings recebidas como resposta do GPT-3 com mais eficiencia
 
 		buf := strings.Builder{}
 
