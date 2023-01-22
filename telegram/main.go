@@ -12,6 +12,34 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+var (
+	maxTokens = 40
+)
+
+func createPrompt(magacc []string, logMsg string) string {
+	msgContext := ""
+	for _, v := range magacc {
+		msgContext += v
+	}
+
+	preContext, err := os.ReadFile("pre_ctx.txt")
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Println(err)
+		}
+	}
+
+	posContext, err := os.ReadFile("pos_ctx.txt")
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Println(err)
+		}
+	}
+
+	prompt := string(preContext) + msgContext + "\n---\n" + string(posContext) + logMsg
+	return prompt
+}
+
 func loadContext() []string {
 	magacc := []string{}
 
@@ -57,7 +85,7 @@ func sendToTelegram(update tgbotapi.Update, response string, bot *tgbotapi.BotAP
 }
 
 func main() {
-	magacc := loadContext()
+	chatMsgs := loadContext()
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
@@ -77,8 +105,6 @@ func main() {
 		log.Panic(err)
 	}
 
-	bot.Debug = true
-
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	u := tgbotapi.NewUpdate(0)
@@ -94,8 +120,8 @@ func main() {
 		logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", update.Message.From.UserName, update.Message.Text)
 		fmt.Printf("logMsg: %q\n", logMsg)
 
-		if len(magacc) > 100 {
-			magacc = magacc[len(magacc)-100:]
+		if len(chatMsgs) > 100 {
+			chatMsgs = chatMsgs[len(chatMsgs)-100:]
 		}
 
 		//if update.Message.Chat.UserName != bot.Self.UserName &&
@@ -103,49 +129,38 @@ func main() {
 		//	continue
 		//}
 
-		msgContext := ""
-		for _, v := range magacc {
-			msgContext += v
-		}
+		// cria um buffer para concatenar strings recebidas como resposta do GPT-3 com mais eficiencia
 
-		response := ""
-		preContext, err := os.ReadFile("pre_ctx.txt")
-		if err != nil {
-			log.Println(err)
-			continue
-		}
+		buf := strings.Builder{}
 
-		posContext, err := os.ReadFile("pos_ctx.txt")
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		prompt := string(preContext) + msgContext + "\n---\n" + string(posContext) + logMsg
-
-		log.Println("Prompt: ", prompt)
-
-		maxRetries := 3
+		prompt := createPrompt(chatMsgs, logMsg)
+		maxRetries := 3 // TODO: make this configurable
+		retries := maxRetries
 	retry:
+		response := ""
 		err = client.CompletionStreamWithEngine(ctx, gpt3.TextDavinci003Engine, gpt3.CompletionRequest{
 			Prompt: []string{
 				prompt,
 			},
-			MaxTokens:   gpt3.IntPtr(2000),
-			Temperature: gpt3.Float32Ptr(0.7),
+			MaxTokens:   gpt3.IntPtr(maxTokens),
+			Temperature: gpt3.Float32Ptr(0.7), // TODO: make this configurable
 		}, func(resp *gpt3.CompletionResponse) {
-			response += resp.Choices[0].Text
+			buf.WriteString(resp.Choices[0].Text)
 		})
 		if err != nil {
-			log.Println(err)
-			magacc = magacc[2:]
-			maxRetries--
-			if maxRetries == 0 {
-				magacc = []string{}
+			log.Printf("GPT-3 error: %s, retrying n: %d", err, maxRetries-retries+1)
+			if len(chatMsgs) > 3 {
+				chatMsgs = chatMsgs[:len(chatMsgs)-3]
+			}
+			retries--
+			if retries <= 0 {
+				log.Printf("GPT-3 error: %s, max retries reached", err)
 				continue
 			}
 			goto retry // goto is not evil
 		}
+
+		response = buf.String()
 
 		if strings.Contains(response, "++++") {
 			log.Printf("msg ignored: %s", response)
@@ -157,8 +172,8 @@ func main() {
 			continue
 		}
 
-		magacc = append(magacc, logMsg, response)
-		saveContext(magacc)
+		chatMsgs = append(chatMsgs, logMsg, response)
+		saveContext(chatMsgs)
 		sendToTelegram(update, response, bot)
 	}
 }
