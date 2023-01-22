@@ -10,18 +10,11 @@ import (
 
 	"github.com/PullRequestInc/go-gpt3"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/neurosnap/sentences"
 )
 
 var (
-	maxTokens = 4000
+	maxTokens = 40
 )
-
-func tokenCount(input string) int {
-	tok := sentences.NewWordTokenizer(sentences.NewPunctStrings())
-	tokens := tok.Tokenize(input, false)
-	return len(tokens)
-}
 
 func createPrompt(magacc []string, logMsg string) string {
 	msgContext := ""
@@ -112,8 +105,6 @@ func main() {
 		log.Panic(err)
 	}
 
-	bot.Debug = true
-
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	u := tgbotapi.NewUpdate(0)
@@ -138,25 +129,13 @@ func main() {
 		//	continue
 		//}
 
+		// cria um buffer para concatenar strings recebidas como resposta do GPT-3 com mais eficiencia
+
+		buf := strings.Builder{}
+
 		prompt := createPrompt(chatMsgs, logMsg)
-		ct := tokenCount(prompt)
-
-		log.Printf("maxTokens: %d, tokenCount: %d", maxTokens, ct)
-
-		for ct > maxTokens {
-			log.Println("token count too high, removing the oldest two messages")
-			if len(chatMsgs) < 1 {
-				log.Println("token count too high, but magacc is empty")
-				break
-			}
-			chatMsgs = chatMsgs[1:]
-			prompt = createPrompt(chatMsgs, logMsg)
-			ct = tokenCount(prompt)
-		}
-
 		maxRetries := 3 // TODO: make this configurable
 		retries := maxRetries
-
 	retry:
 		response := ""
 		err = client.CompletionStreamWithEngine(ctx, gpt3.TextDavinci003Engine, gpt3.CompletionRequest{
@@ -166,10 +145,13 @@ func main() {
 			MaxTokens:   gpt3.IntPtr(maxTokens),
 			Temperature: gpt3.Float32Ptr(0.7), // TODO: make this configurable
 		}, func(resp *gpt3.CompletionResponse) {
-			response += resp.Choices[0].Text
+			buf.WriteString(resp.Choices[0].Text)
 		})
 		if err != nil {
 			log.Printf("GPT-3 error: %s, retrying n: %d", err, maxRetries-retries+1)
+			if len(chatMsgs) > 3 {
+				chatMsgs = chatMsgs[:len(chatMsgs)-3]
+			}
 			retries--
 			if retries <= 0 {
 				log.Printf("GPT-3 error: %s, max retries reached", err)
@@ -177,6 +159,8 @@ func main() {
 			}
 			goto retry // goto is not evil
 		}
+
+		response = buf.String()
 
 		if strings.Contains(response, "++++") {
 			log.Printf("msg ignored: %s", response)
