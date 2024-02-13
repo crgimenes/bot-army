@@ -20,6 +20,6 @@ id_rsa*
 notas.txt
 .DS_Stor
 env.sh
-pre_ctx.txt
-pos_ctx.txt
+ctx.txt
+
 
