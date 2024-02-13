@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -18,6 +19,8 @@ var (
 	openaiAPIKey     string
 	telegramBotToken string
 	systemContext    []byte
+	contextQuery     []string
+	mx               sync.Mutex
 )
 
 func getOpenAI(userQuery []string) (string, error) {
@@ -92,29 +95,6 @@ func main() {
 		log.Println("ctx.txt not found")
 	}
 
-	/*
-		userQuery := []string{}
-
-		for update := range updates {
-			if update.Message == nil { // ignore any non-Message Updates
-				continue
-			}
-
-			logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", update.Message.From.UserName, update.Message.Text)
-
-			userQuery = append(userQuery, logMsg)
-			fmt.Printf("Received message: %s\n", update.Message.Text)
-		}
-
-		msg := []string{"Qual sua opinião sobre rust?"}
-
-		r, err := getOpenAI(msg)
-		if err != nil {
-			log.Fatalf("Error getting OpenAI response: %v", err)
-		}
-		fmt.Println(r)
-	*/
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -127,26 +107,47 @@ func main() {
 		log.Fatalf("Error creating bot: %v", err)
 	}
 
+	log.Println("Bot started")
+
 	b.Start(ctx)
 }
 
-func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if update.Message == nil {
-		return
+// função que adiciona o parametro como 5 item no array de contexto e remove o primeiro item mantendo apenas 5 itens
+func updateContext(context string) {
+	mx.Lock()
+	defer mx.Unlock()
+	contextQuery = append(contextQuery, context)
+	if len(contextQuery) > 5 {
+		contextQuery = contextQuery[1:]
 	}
+}
 
+func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	from := update.Message.From
 	logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", from.Username, update.Message.Text)
 
-	r, err := getOpenAI([]string{string(logMsg)})
+	q := contextQuery
+	q = append(q, string(logMsg))
+
+	r, err := getOpenAI(q)
 	if err != nil {
 		log.Printf("Error getting OpenAI response: %v", err)
 		return
 	}
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ParseMode: models.ParseModeMarkdown,
+	if r == "++++" {
+		log.Println("Empty response")
+		return
+	}
+
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+		ParseMode: "Markdown",
 		ChatID:    update.Message.Chat.ID,
 		Text:      r,
 	})
+	if err != nil {
+		log.Printf("Error sending message: %v", err)
+	}
+
+	updateContext(logMsg)
 }
