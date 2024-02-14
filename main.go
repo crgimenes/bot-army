@@ -155,7 +155,7 @@ func main() {
 	systemContext, err = os.ReadFile("ctx.txt")
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Fatalf("Error reading pre_ctx.txt: %v", err)
+			log.Fatalf("Error reading ctx.txt: %v", err)
 		}
 		log.Println("ctx.txt not found")
 	}
