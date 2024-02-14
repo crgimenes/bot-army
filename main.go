@@ -1,6 +1,7 @@
 package main
 
 import (
+	"botarmy/database"
 	"context"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ var (
 	systemContext    []byte
 	contextQuery     []string
 	mx               sync.Mutex
+	db               *database.Database
 )
 
 func getOpenAI(userQuery []string) (string, error) {
@@ -73,18 +75,75 @@ func getOpenAI(userQuery []string) (string, error) {
 	}
 }
 
+func updateContext(context string) {
+	mx.Lock()
+	defer mx.Unlock()
+	contextQuery = append(contextQuery, context)
+	if len(contextQuery) > 5 {
+		contextQuery = contextQuery[1:]
+	}
+}
+
+func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	from := update.Message.From
+	logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", from.Username, update.Message.Text)
+
+	q := contextQuery
+	q = append(q, string(logMsg))
+
+	r, err := getOpenAI(q)
+	if err != nil {
+		log.Printf("Error getting OpenAI response: %v", err)
+		return
+	}
+
+	log.Printf("Query: %s\nResponse: %s", logMsg, r)
+
+	if r == "++++" {
+		log.Println("Empty response")
+		err = db.AddMessage("non_query", logMsg, "")
+		if err != nil {
+			log.Printf("Error adding message to database: %v", err)
+		}
+		return
+	}
+
+	err = db.AddMessage("query", logMsg, r)
+	if err != nil {
+		log.Printf("Error adding message to database: %v", err)
+	}
+
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+		ParseMode: "Markdown",
+		ChatID:    update.Message.Chat.ID,
+		Text:      r,
+	})
+	if err != nil {
+		log.Printf("Error sending message: %v", err)
+	}
+
+	updateContext(logMsg)
+}
+
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	var err error
 	openaiAPIKey = os.Getenv("OPENAI_API_KEY")
 	if openaiAPIKey == "" {
-		fmt.Println("OPENAI_API_KEY environment variable is not set")
+		log.Println("OPENAI_API_KEY environment variable is not set")
 		return
 	}
 
 	telegramBotToken = os.Getenv("TELEGRAM_BOT_TOKEN")
 	if telegramBotToken == "" {
-		fmt.Println("TELEGRAM_BOT_TOKEN environment variable is not set")
+		log.Println("TELEGRAM_BOT_TOKEN environment variable is not set")
 		return
+	}
+
+	db, err = database.New()
+	if err != nil {
+		log.Fatalf("Error creating database: %v", err)
 	}
 
 	systemContext, err = os.ReadFile("ctx.txt")
@@ -110,44 +169,4 @@ func main() {
 	log.Println("Bot started")
 
 	b.Start(ctx)
-}
-
-// função que adiciona o parametro como 5 item no array de contexto e remove o primeiro item mantendo apenas 5 itens
-func updateContext(context string) {
-	mx.Lock()
-	defer mx.Unlock()
-	contextQuery = append(contextQuery, context)
-	if len(contextQuery) > 5 {
-		contextQuery = contextQuery[1:]
-	}
-}
-
-func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	from := update.Message.From
-	logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", from.Username, update.Message.Text)
-
-	q := contextQuery
-	q = append(q, string(logMsg))
-
-	r, err := getOpenAI(q)
-	if err != nil {
-		log.Printf("Error getting OpenAI response: %v", err)
-		return
-	}
-
-	if r == "++++" {
-		log.Println("Empty response")
-		return
-	}
-
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ParseMode: "Markdown",
-		ChatID:    update.Message.Chat.ID,
-		Text:      r,
-	})
-	if err != nil {
-		log.Printf("Error sending message: %v", err)
-	}
-
-	updateContext(logMsg)
 }
