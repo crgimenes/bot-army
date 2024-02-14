@@ -85,6 +85,12 @@ func updateContext(context string) {
 }
 
 func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if update.Message == nil ||
+		update.Message.Text == "" ||
+		update.Message.From == nil {
+		return
+	}
+
 	from := update.Message.From
 	logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", from.Username, update.Message.Text)
 
