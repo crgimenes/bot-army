@@ -21,6 +21,7 @@ notas.txt
 .DS_Stor
 env.sh
 ctx.txt
+pos_ctx.txt
 
 bot.db
 botarmy

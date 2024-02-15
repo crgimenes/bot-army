@@ -20,6 +20,7 @@ var (
 	openaiAPIKey     string
 	telegramBotToken string
 	systemContext    []byte
+	posContext       []byte
 	contextQuery     []string
 	mx               sync.Mutex
 	db               *database.Database
@@ -45,9 +46,11 @@ func getOpenAI(userQuery []string) (string, error) {
 		systemQuery,
 	}
 
+	auxCtx := fmt.Sprintf("%s\n\n%s", userQuery[len(userQuery)-1], string(posContext))
+
 	message = append(message, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleUser,
-		Content: userQuery[len(userQuery)-1], // last message is the user query
+		Content: auxCtx,
 	})
 
 	req := openai.ChatCompletionRequest{
@@ -158,6 +161,14 @@ func main() {
 			log.Fatalf("Error reading ctx.txt: %v", err)
 		}
 		log.Println("ctx.txt not found")
+	}
+
+	posContext, err = os.ReadFile("pos_ctx.txt")
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Fatalf("Error reading pos_ctx.txt: %v", err)
+		}
+		log.Println("pos_ctx.txt not found")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
