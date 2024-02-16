@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 
 	"github.com/go-telegram/bot"
@@ -24,6 +25,7 @@ var (
 	contextQuery     []string
 	mx               sync.Mutex
 	db               *database.Database
+	bannedUsers      map[string]struct{}
 )
 
 func getOpenAI(userQuery []string) (string, error) {
@@ -95,6 +97,12 @@ func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	}
 
 	from := update.Message.From
+
+	_, ok := bannedUsers[from.Username]
+	if ok {
+		return
+	}
+
 	logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", from.Username, update.Message.Text)
 
 	q := contextQuery
@@ -171,6 +179,33 @@ func main() {
 		log.Println("pos_ctx.txt not found")
 	}
 
+	// Load banned users to prevent them from interacting with the bot
+	bannedUsersAux, err := os.ReadFile("banned_users.txt")
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Fatalf("Error reading banned_users.txt: %v", err)
+		}
+		log.Println("banned_users.txt not found")
+	}
+
+	bannedUsers = make(map[string]struct{})
+	sba := strings.Split(string(bannedUsersAux), "\n")
+	for _, v := range sba {
+		if v == "" {
+			continue
+		}
+		if v[0] == '#' {
+			continue
+		}
+		splitComment := strings.Split(v, "#")
+		if len(splitComment) > 1 {
+			v = splitComment[0]
+		}
+		v = strings.TrimSpace(v)
+		bannedUsers[v] = struct{}{}
+	}
+
+	/////////////////////////////////////////
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
