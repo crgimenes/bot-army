@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/signal"
 	"strings"
 	"sync"
 
@@ -20,40 +19,29 @@ import (
 var (
 	openaiAPIKey     string
 	telegramBotToken string
-	systemContext    []byte
-	posContext       []byte
-	contextQuery     []string
+	systemContext    string
 	mx               sync.Mutex
 	db               *database.Database
 	bannedUsers      map[string]struct{}
+	help             string
 )
 
-func getOpenAI(userQuery []string) (string, error) {
+func getOpenAI(userQuery string) (string, error) {
 	c := openai.NewClient(openaiAPIKey)
 	ctx := context.Background()
 
-	context := ""
-	for _, v := range userQuery[:len(userQuery)-1] {
-		context += v + "\n\n"
-	}
-
 	systemQuery := openai.ChatCompletionMessage{
-		Role: openai.ChatMessageRoleSystem,
-		Content: fmt.Sprintf("%s\nmensagens de contexto:%s ",
-			systemContext, // pre-existing context
-			context),      // user context
+		Role:    openai.ChatMessageRoleSystem,
+		Content: systemContext,
 	}
 
 	message := []openai.ChatCompletionMessage{
 		systemQuery,
+		{
+			Role:    openai.ChatMessageRoleUser,
+			Content: userQuery,
+		},
 	}
-
-	auxCtx := fmt.Sprintf("%s\n\n%s", userQuery[len(userQuery)-1], string(posContext))
-
-	message = append(message, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
-		Content: auxCtx,
-	})
 
 	req := openai.ChatCompletionRequest{
 		Model:     openai.GPT3Dot5Turbo,
@@ -80,15 +68,6 @@ func getOpenAI(userQuery []string) (string, error) {
 	}
 }
 
-func updateContext(context string) {
-	mx.Lock()
-	defer mx.Unlock()
-	contextQuery = append(contextQuery, context)
-	if len(contextQuery) > 5 {
-		contextQuery = contextQuery[1:]
-	}
-}
-
 func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	if update.Message == nil ||
 		update.Message.Text == "" ||
@@ -103,43 +82,45 @@ func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		return
 	}
 
-	logMsg := fmt.Sprintf("\n---\nFrom: %q\nMessage: %s\n", from.Username, update.Message.Text)
-
-	q := contextQuery
-	q = append(q, string(logMsg))
-
-	r, err := getOpenAI(q)
-	if err != nil {
-		log.Printf("Error getting OpenAI response: %v", err)
-		return
-	}
-
-	log.Printf("Query: %s\nResponse: %s", logMsg, r)
-
-	if r == "++++" {
-		log.Println("Empty response")
-		err = db.AddMessage("non_query", logMsg, "")
+	msg := update.Message.Text
+	if msg == "/help" {
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+			ParseMode: "Markdown",
+			ChatID:    update.Message.Chat.ID,
+			Text:      help,
+		})
 		if err != nil {
-			log.Printf("Error adding message to database: %v", err)
+			log.Printf("Error sending message: %v", err)
 		}
 		return
 	}
 
-	err = db.AddMessage("query", logMsg, r)
-	if err != nil {
-		log.Printf("Error adding message to database: %v", err)
-	}
+	if strings.HasPrefix(msg, "/ask ") {
+		msg = strings.TrimPrefix(msg, "/ask ")
+		msg = fmt.Sprintf("\nFrom: %q\nAsk: %s\n", from.Username, update.Message.Text)
 
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ParseMode: "Markdown",
-		ChatID:    update.Message.Chat.ID,
-		Text:      r,
-	})
-	if err != nil {
-		log.Printf("Error sending message: %v", err)
-	}
+		r, err := getOpenAI(msg)
+		if err != nil {
+			log.Printf("Error getting OpenAI response: %v", err)
+			return
+		}
 
-	updateContext(logMsg)
+		log.Printf("Query: %s\nResponse: %s", msg, r)
+
+		err = db.AddMessage("query", msg, r)
+		if err != nil {
+			log.Printf("Error adding message to database: %v", err)
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ParseMode: "Markdown",
+			ChatID:    update.Message.Chat.ID,
+			Text:      r,
+		})
+		if err != nil {
+			log.Printf("Error sending message: %v", err)
+		}
+	}
 }
 
 func main() {
@@ -163,23 +144,24 @@ func main() {
 		log.Fatalf("Error creating database: %v", err)
 	}
 
-	systemContext, err = os.ReadFile("ctx.txt")
+	systemContextAux, err := os.ReadFile("ctx.txt")
 	if err != nil {
 		if !os.IsNotExist(err) {
 			log.Fatalf("Error reading ctx.txt: %v", err)
 		}
 		log.Println("ctx.txt not found")
 	}
+	systemContext = string(systemContextAux)
 
-	posContext, err = os.ReadFile("pos_ctx.txt")
+	helpAux, err := os.ReadFile("help.md")
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Fatalf("Error reading pos_ctx.txt: %v", err)
+			log.Fatalf("Error reading help.md: %v", err)
 		}
-		log.Println("pos_ctx.txt not found")
+		log.Println("help.md not found")
 	}
+	help = string(helpAux)
 
-	// Load banned users to prevent them from interacting with the bot
 	bannedUsersAux, err := os.ReadFile("banned_users.txt")
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -206,9 +188,6 @@ func main() {
 	}
 
 	/////////////////////////////////////////
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
 	opts := []bot.Option{
 		bot.WithDefaultHandler(handler),
 	}
@@ -220,5 +199,5 @@ func main() {
 
 	log.Println("Bot started")
 
-	b.Start(ctx)
+	b.Start(context.Background())
 }
