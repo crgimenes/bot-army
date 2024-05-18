@@ -1,15 +1,13 @@
 package main
 
 import (
-	"botarmy/database"
 	"context"
-	"errors"
-	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
 	"sync"
+
+	"botarmy/database"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -26,7 +24,7 @@ var (
 	help             string
 )
 
-func getOpenAI(userQuery string) (string, error) {
+func getOpenAI(user, query string) (string, error) {
 	c := openai.NewClient(openaiAPIKey)
 	ctx := context.Background()
 
@@ -39,33 +37,24 @@ func getOpenAI(userQuery string) (string, error) {
 		systemQuery,
 		{
 			Role:    openai.ChatMessageRoleUser,
-			Content: userQuery,
+			Content: query,
 		},
 	}
 
 	req := openai.ChatCompletionRequest{
-		Model:     openai.GPT4o,
-		MaxTokens: 2000,
-		Messages:  message,
-		Stream:    true,
+		Model:    openai.GPT4o,
+		Messages: message,
+		User:     user,
 	}
-	stream, err := c.CreateChatCompletionStream(ctx, req)
+
+	resp, err := c.CreateChatCompletion(ctx, req)
 	if err != nil {
 		return "", err
 	}
-	defer stream.Close()
 
-	r := ""
-	for {
-		response, err := stream.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return r, nil
-			}
-			return "", err
-		}
-		r += response.Choices[0].Delta.Content
-	}
+	content := resp.Choices[0].Message.Content
+
+	return content, nil
 }
 
 func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -100,9 +89,9 @@ func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 	if strings.HasPrefix(msg, "/ask ") {
 		msg = strings.TrimPrefix(msg, "/ask ")
-		msg = fmt.Sprintf("\nFrom: %q\nAsk: %s\n", from.Username, msg)
+		msg = strings.TrimSpace(msg)
 
-		r, err := getOpenAI(msg)
+		r, err := getOpenAI(from.Username, msg)
 		if err != nil {
 			log.Printf("Error getting OpenAI response: %v", err)
 			return
@@ -110,7 +99,7 @@ func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 		log.Printf("Query: %s\nResponse: %s", msg, r)
 
-		err = db.AddMessage("query", msg, r)
+		err = db.AddMessage("query", from.Username, msg, r)
 		if err != nil {
 			log.Printf("Error adding message to database: %v", err)
 		}
