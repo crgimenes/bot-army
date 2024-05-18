@@ -44,7 +44,7 @@ func getOpenAI(userQuery string) (string, error) {
 	}
 
 	req := openai.ChatCompletionRequest{
-		Model:     openai.GPT3Dot5Turbo,
+		Model:     openai.GPT4o,
 		MaxTokens: 2000,
 		Messages:  message,
 		Stream:    true,
@@ -83,6 +83,9 @@ func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	}
 
 	msg := update.Message.Text
+
+	log.Printf("Message from %q: %q", from.Username, msg)
+
 	if msg == "/help" {
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 			ParseMode: "Markdown",
@@ -97,7 +100,7 @@ func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 	if strings.HasPrefix(msg, "/ask ") {
 		msg = strings.TrimPrefix(msg, "/ask ")
-		msg = fmt.Sprintf("\nFrom: %q\nAsk: %s\n", from.Username, update.Message.Text)
+		msg = fmt.Sprintf("\nFrom: %q\nAsk: %s\n", from.Username, msg)
 
 		r, err := getOpenAI(msg)
 		if err != nil {
