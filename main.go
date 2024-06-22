@@ -4,23 +4,16 @@ import (
 	"context"
 	"log"
 	"os"
-	"strings"
-	"sync"
+	"time"
 
-	"botarmy/database"
-
-	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
-	openai "github.com/sashabaranov/go-openai"
+	"github.com/sashabaranov/go-openai"
+	tele "gopkg.in/telebot.v3"
 )
 
 var (
 	openaiAPIKey     string
 	telegramBotToken string
 	systemContext    string
-	mx               sync.Mutex
-	db               *database.Database
-	bannedUsers      map[string]struct{}
 	help             string
 )
 
@@ -57,68 +50,8 @@ func getOpenAI(user, query string) (string, error) {
 	return content, nil
 }
 
-func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if update.Message == nil ||
-		update.Message.Text == "" ||
-		update.Message.From == nil {
-		return
-	}
-
-	from := update.Message.From
-
-	_, ok := bannedUsers[from.Username]
-	if ok {
-		return
-	}
-
-	msg := update.Message.Text
-
-	log.Printf("Message from %q: %q", from.Username, msg)
-
-	if msg == "/help" {
-		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    update.Message.Chat.ID,
-			Text:      help,
-		})
-		if err != nil {
-			log.Printf("Error sending message: %v", err)
-		}
-		return
-	}
-
-	if strings.HasPrefix(msg, "/ask ") {
-		msg = strings.TrimPrefix(msg, "/ask ")
-		msg = strings.TrimSpace(msg)
-
-		r, err := getOpenAI(from.Username, msg)
-		if err != nil {
-			log.Printf("Error getting OpenAI response: %v", err)
-			return
-		}
-
-		log.Printf("Query: %s\nResponse: %s", msg, r)
-
-		err = db.AddMessage("query", from.Username, msg, r)
-		if err != nil {
-			log.Printf("Error adding message to database: %v", err)
-		}
-
-		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    update.Message.Chat.ID,
-			Text:      r,
-		})
-		if err != nil {
-			log.Printf("Error sending message: %v", err)
-		}
-	}
-}
-
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	var err error
 	openaiAPIKey = os.Getenv("OPENAI_API_KEY")
 	if openaiAPIKey == "" {
 		log.Println("OPENAI_API_KEY environment variable is not set")
@@ -129,11 +62,6 @@ func main() {
 	if telegramBotToken == "" {
 		log.Println("TELEGRAM_BOT_TOKEN environment variable is not set")
 		return
-	}
-
-	db, err = database.New()
-	if err != nil {
-		log.Fatalf("Error creating database: %v", err)
 	}
 
 	systemContextAux, err := os.ReadFile("ctx.txt")
@@ -154,42 +82,44 @@ func main() {
 	}
 	help = string(helpAux)
 
-	bannedUsersAux, err := os.ReadFile("banned_users.txt")
+	pref := tele.Settings{
+		Token:  telegramBotToken,
+		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
+	}
+
+	b, err := tele.NewBot(pref)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Fatalf("Error reading banned_users.txt: %v", err)
-		}
-		log.Println("banned_users.txt not found")
+		log.Fatal(err)
+		return
 	}
 
-	bannedUsers = make(map[string]struct{})
-	sba := strings.Split(string(bannedUsersAux), "\n")
-	for _, v := range sba {
-		if v == "" {
-			continue
+	b.Handle("/ask", func(c tele.Context) error {
+		if c.Message().Private() {
+			c.Reply("This command is only available in group chats")
+			return nil
 		}
-		if v[0] == '#' {
-			continue
+
+		args := c.Message().Payload
+		if args == "" {
+			c.Reply("Usage: /ask <question>")
+			return nil
 		}
-		splitComment := strings.Split(v, "#")
-		if len(splitComment) > 1 {
-			v = splitComment[0]
+
+		question := c.Message().Payload
+		answer, err := getOpenAI(c.Message().Chat.Username, question)
+		if err != nil {
+			c.Reply("Error: " + err.Error())
+			return nil
 		}
-		v = strings.TrimSpace(v)
-		bannedUsers[v] = struct{}{}
-	}
 
-	/////////////////////////////////////////
-	opts := []bot.Option{
-		bot.WithDefaultHandler(handler),
-	}
+		c.Reply(answer)
+		return nil
+	})
 
-	b, err := bot.New(telegramBotToken, opts...)
-	if err != nil {
-		log.Fatalf("Error creating bot: %v", err)
-	}
+	b.Handle("/help", func(c tele.Context) error {
+		c.Reply(help)
+		return nil
+	})
 
-	log.Println("Bot started")
-
-	b.Start(context.Background())
+	b.Start()
 }
