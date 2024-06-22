@@ -23,6 +23,7 @@ env.sh
 ctx.txt
 pos_ctx.txt
 
+bot
 bot.db
 botarmy
 banned_users.txt
