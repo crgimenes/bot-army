@@ -83,8 +83,9 @@ func main() {
 	help = string(helpAux)
 
 	pref := tele.Settings{
-		Token:  telegramBotToken,
-		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
+		Token:     telegramBotToken,
+		Poller:    &tele.LongPoller{Timeout: 10 * time.Second},
+		ParseMode: tele.ModeMarkdown,
 	}
 
 	b, err := tele.NewBot(pref)
@@ -94,11 +95,12 @@ func main() {
 	}
 
 	b.Handle("/ask", func(c tele.Context) error {
-		if c.Message().Private() {
-			c.Reply("This command is only available in group chats")
-			return nil
-		}
-
+		/*
+			if c.Message().Private() {
+				c.Reply("This command is only available in group chats")
+				return nil
+			}
+		*/
 		args := c.Message().Payload
 		if args == "" {
 			c.Reply("Usage: /ask <question>")
@@ -112,14 +114,14 @@ func main() {
 			return nil
 		}
 
-		c.Reply(answer)
-		return nil
+		return c.Reply(answer)
 	})
 
 	b.Handle("/help", func(c tele.Context) error {
-		c.Reply(help)
-		return nil
+		log.Println("Help command")
+		return c.Reply(help)
 	})
 
+	log.Println("Bot started")
 	b.Start()
 }
